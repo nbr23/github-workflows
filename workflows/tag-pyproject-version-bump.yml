@@ -1,0 +1,36 @@
+name: Tag python pyproject.toml version bumps
+
+on:
+  workflow_call:
+
+jobs:
+  tag-npm-version-bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Git config
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "<>"
+
+      - name: Get version changes in commit history
+        id: get_version_changes
+        run: |
+          for commit_hash in $(git rev-list ${{ github.event.before}}..${{ github.sha}}); do
+              git checkout $commit_hash
+              version=$(git diff ${commit_hash}^! -- pyproject.toml | awk -F'"' '/^\+\s*version/ {print $2}') | head -n 1
+              if [ -n "$version" ]; then
+                tag="v${version}"
+                if [ $(git tag -l $tag | wc -l) -eq 0 ]; then
+                  git tag -a $tag $commit_hash -m "Tag version ${version}"
+                  git push origin $tag
+                fi
+              fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
