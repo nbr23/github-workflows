@@ -23,7 +23,7 @@ jobs:
         run: |
           for commit_hash in $(git rev-list ${{ github.event.before}}..${{ github.sha}}); do
               git checkout $commit_hash
-              version=$(git diff ${commit_hash}^! -- pyproject.toml | awk -F'"' '/^\+\s*version/ {print $2}') | head -n 1
+              version=$(git diff ${commit_hash}^! -- pyproject.toml | awk -F'"' '/^\+\s*version/ {print $2}' | head -n 1)
               if [ -n "$version" ]; then
                 tag="v${version}"
                 if [ $(git tag -l $tag | wc -l) -eq 0 ]; then
