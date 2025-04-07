@@ -12,7 +12,7 @@ on:
         description: 'Whether to create the release as a draft'
         required: false
         type: boolean
-        default: true
+        default: false
 
 jobs:
   tag-npm-version-bump:
