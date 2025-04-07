@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: false
+      draft_release:
+        description: 'Whether to create the release as a draft'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   tag-npm-version-bump:
@@ -57,11 +62,20 @@ jobs:
 
             echo "Creating release for tag $tag (version $version)"
 
-            gh release create "$tag" \
-              --title "$tag" \
-              --notes "$tag" \
-              --target "$commit" \
-              --generate-notes
+            if [ "${{ inputs.draft_release }}" = "true" ]; then
+              gh release create "$tag" \
+                --title "$tag" \
+                --notes "$tag" \
+                --target "$commit" \
+                --generate-notes \
+                --draft
+            else
+              gh release create "$tag" \
+                --title "$tag" \
+                --notes "$tag" \
+                --target "$commit" \
+                --generate-notes
+            fi
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
