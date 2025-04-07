@@ -2,6 +2,12 @@ name: Tag NPM package.json version bumps
 
 on:
   workflow_call:
+    inputs:
+      create_release:
+        description: 'Whether to create a GitHub release with the tag'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   tag-npm-version-bump:
@@ -21,6 +27,7 @@ jobs:
       - name: Get version changes in commit history
         id: get_version_changes
         run: |
+          found_tags=()
           for commit_hash in $(git rev-list ${{ github.event.before}}..${{ github.sha}}); do
               git checkout $commit_hash
               version=$(git diff ${commit_hash}^! -- package.json | awk -F'"' '/^\+\s*"version":/ {print $4}')
@@ -29,8 +36,31 @@ jobs:
                 if [ $(git tag -l $tag | wc -l) -eq 0 ]; then
                   git tag -a $tag $commit_hash -m "Tag version ${version}"
                   git push origin $tag
+                  found_tags+=("$tag:$version:$commit_hash")
                 fi
               fi
+          done
+          echo "tags=$(IFS=,; echo "${found_tags[*]}")" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Releases
+        if: ${{ inputs.create_release == true && steps.get_version_changes.outputs.tags != '' }}
+        run: |
+          IFS=',' read -ra TAGS_ARRAY <<< "${{ steps.get_version_changes.outputs.tags }}"
+
+          for tag_info in "${TAGS_ARRAY[@]}"; do
+            IFS=':' read -ra TAG_PARTS <<< "$tag_info"
+            tag="${TAG_PARTS[0]}"
+            version="${TAG_PARTS[1]}"
+            commit="${TAG_PARTS[2]}"
+
+            echo "Creating release for tag $tag (version $version)"
+
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes "$tag" \
+              --target "$commit"
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
