@@ -60,7 +60,8 @@ jobs:
             gh release create "$tag" \
               --title "$tag" \
               --notes "$tag" \
-              --target "$commit"
+              --target "$commit" \
+              --generate-notes
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
