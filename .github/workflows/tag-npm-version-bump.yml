@@ -13,10 +13,30 @@ on:
         required: false
         type: boolean
         default: false
+      build_command:
+        description: 'Command to build artifacts before creating release'
+        required: false
+        type: string
+        default: ''
+      release_assets:
+        description: 'JSON object of assets to upload {name_pattern: filepath_pattern}'
+        required: false
+        type: string
+        default: '{}'
+    outputs:
+      release_created:
+        description: 'Whether a release was created'
+        value: ${{ jobs.tag-npm-version-bump.outputs.release_created }}
+      release_tag:
+        description: 'The tag of the created release'
+        value: ${{ jobs.tag-npm-version-bump.outputs.release_tag }}
 
 jobs:
   tag-npm-version-bump:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.create_release.outputs.release_created }}
+      release_tag: ${{ steps.create_release.outputs.release_tag }}
 
     steps:
       - name: Checkout repository
@@ -49,10 +69,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build artifacts if needed
+        if: ${{ inputs.build_command != '' && inputs.create_release == true && steps.get_version_changes.outputs.tags != '' }}
+        run: |
+          # Checkout to the latest commit to build
+          git checkout ${{ github.sha }}
+          ${{ inputs.build_command }}
+
       - name: Create GitHub Releases
+        id: create_release
         if: ${{ inputs.create_release == true && steps.get_version_changes.outputs.tags != '' }}
         run: |
           IFS=',' read -ra TAGS_ARRAY <<< "${{ steps.get_version_changes.outputs.tags }}"
+
+          release_created="false"
+          release_tag=""
 
           for tag_info in "${TAGS_ARRAY[@]}"; do
             IFS=':' read -ra TAG_PARTS <<< "$tag_info"
@@ -62,20 +93,58 @@ jobs:
 
             echo "Creating release for tag $tag (version $version)"
 
+            release_cmd="gh release create \"$tag\" \
+              --title \"$tag\" \
+              --notes \"$tag\" \
+              --target \"$commit\" \
+              --generate-notes"
+
             if [ "${{ inputs.draft_release }}" = "true" ]; then
-              gh release create "$tag" \
-                --title "$tag" \
-                --notes "$tag" \
-                --target "$commit" \
-                --generate-notes \
-                --draft
-            else
-              gh release create "$tag" \
-                --title "$tag" \
-                --notes "$tag" \
-                --target "$commit" \
-                --generate-notes
+              release_cmd="$release_cmd --draft"
+            fi
+
+            if [ '${{ inputs.release_assets }}' != '{}' ]; then
+              echo "Processing release assets: ${{ inputs.release_assets }}"
+
+              echo '${{ inputs.release_assets }}' > assets.json
+
+              for name_pattern in $(jq -r 'keys[]' assets.json); do
+                filepath_pattern=$(jq -r --arg key "$name_pattern" '.[$key]' assets.json)
+
+                asset_name="$name_pattern"
+                asset_name="${asset_name//\{version\}/$version}"
+                asset_name="${asset_name//\{tag\}/$tag}"
+
+                for file in $filepath_pattern; do
+                  if [ -f "$file" ]; then
+                    filename=$(basename "$file")
+                    final_name="${asset_name//\{filename\}/$filename}"
+
+                    echo "Adding asset: $file as $final_name"
+                    release_cmd="$release_cmd \"$file#$final_name\""
+                  else
+                    echo "Warning: File not found: $file"
+                  fi
+                done
+              done
+            fi
+
+            eval "$release_cmd"
+
+            if [ $? -eq 0 ]; then
+              release_created="true"
+              release_tag="$tag"
             fi
           done
+
+          echo "release_created=$release_created" >> $GITHUB_OUTPUT
+          echo "release_tag=$release_tag" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set default outputs if no release created
+        if: ${{ steps.create_release.outcome == 'skipped' || steps.create_release.outputs.release_created == '' }}
+        id: default_outputs
+        run: |
+          echo "release_created=false" >> $GITHUB_OUTPUT
+          echo "release_tag=" >> $GITHUB_OUTPUT
