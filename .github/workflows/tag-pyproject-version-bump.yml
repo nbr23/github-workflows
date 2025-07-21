@@ -13,10 +13,20 @@ on:
         required: false
         type: boolean
         default: false
+    outputs:
+      tag_created:
+        description: 'Whether a tag was created'
+        value: ${{ jobs.tag-npm-version-bump.outputs.tag_created }}
+      tag_name:
+        description: 'The name of the created tag'
+        value: ${{ jobs.tag-npm-version-bump.outputs.tag_name }}
 
 jobs:
   tag-npm-version-bump:
     runs-on: ubuntu-latest
+    outputs:
+      tag_created: ${{ steps.get_version_changes.outputs.tag_created }}
+      tag_name: ${{ steps.get_version_changes.outputs.tag_name }}
 
     steps:
       - name: Checkout repository
@@ -33,6 +43,8 @@ jobs:
         id: get_version_changes
         run: |
           found_tags=()
+          tag_created="false"
+          tag_name=""
           for commit_hash in $(git rev-list ${{ github.event.before}}..${{ github.sha}}); do
               git checkout $commit_hash
               version=$(git diff ${commit_hash}^! -- pyproject.toml | awk -F'"' '/^\+\s*version/ {print $2}' | head -n 1)
@@ -42,10 +54,14 @@ jobs:
                   git tag -a $tag $commit_hash -m "Tag version ${version}"
                   git push origin $tag
                   found_tags+=("$tag:$version:$commit_hash")
+                  tag_created="true"
+                  tag_name="$tag"
                 fi
               fi
           done
           echo "tags=$(IFS=,; echo "${found_tags[*]}")" >> $GITHUB_OUTPUT
+          echo "tag_created=$tag_created" >> $GITHUB_OUTPUT
+          echo "tag_name=$tag_name" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
